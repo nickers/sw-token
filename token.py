@@ -10,36 +10,54 @@ WAIT_TIME = 1.0 # in seconds
 __author__ = 'nickers'
 
 class Token(object):
-	def __init__(self, c):
+	def __init__(self, c, owner):
 		self.color = c
+		self.owner = owner
 
 	def execute(self, node):
 		if self.color!=node.token_in.color:
 			print "#%d: received token with: '%s', actual '%s'"%(node.id, self.color, node.token_out.color)
 			node.token_in = self
 			node.token_out.color = not node.token_out.color
+			node.ack_received = False
+
+			self.__send_ack()
+			return True
+		return False
+
+	def __send_ack(self):
+		ack = TokenACK()
+		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		data = pickle.dumps(ack)
+		print " @ACK to %s"%(self.owner,)
+		s.sendto(data, self.owner)
+		s.close()
+
 
 class TokenACK(object):
 	def __init__(self):
 		None
 
 	def execute(self, node):
-		None
+		print " @ACK received"
+		node.ack_received = True
+		return False
 
 class Node(object):
-	def __init__(self, id, c, next):
+	def __init__(self, id, c, owner, next):
 		self.id = id
-		self.token_in = Token(False)
-		self.token_out = Token(c)
+		self.token_in = Token(False, owner)
+		self.token_out = Token(c, owner)
 		self.receive_time = None
 		self.next_timeout = time.time() + WAIT_TIME
 		self.next_node = next
+		self.ack_received = False
 
 	def e_init(self):
 		print "#%d: Init: in: %s, out: %s"%(self.id, self.token_in.color, self.token_out.color)
 
 	def e_receive(self, msg):
-		msg.execute(self)
+		return msg.execute(self)
 
 	def e_send(self, msg):
 		self.next_timeout = time.time() + WAIT_TIME
@@ -48,13 +66,17 @@ class Node(object):
 		data = pickle.dumps(msg)
 		print "#%d: sending %s to %s"%(self.id, msg.color, self.next_node)
 		s.sendto(data, self.next_node)
+		s.close()
+
 
 	def e_timeout(self):
-		self.e_send(self.token_out)
+		if not self.ack_received:
+			self.e_send(self.token_out)
+		self.next_timeout = time.time() + WAIT_TIME
 
 
 def main(id, port, next):
-	node = Node(id, id==0, next)
+	node = Node(id, id==0, (HOST, port), next)
 	node.e_init()
 
 	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -71,11 +93,10 @@ def main(id, port, next):
 
 			data = s.recv(BUF_SIZE)
 			data = pickle.loads(data)
-			node.e_receive(data)
-
-			node.e_send(node.token_out)
+			if node.e_receive(data):
+				node.e_send(node.token_out)
 		except socket.timeout:
-			print "#%d: Timeout!"%id
+			print "#%d: Timeout! ACK:%s"%(id, node.ack_received)
 			node.e_timeout()
 
 if __name__=="__main__":
@@ -89,4 +110,4 @@ if __name__=="__main__":
 	next_port = int(sys.argv[4])
 
 	main(id, port, (next_host, next_port))
-	print "#%d Finished"%id
+	print "#%d Finished!?"%id
