@@ -13,8 +13,17 @@ class Token(object):
 	def __init__(self, c):
 		self.color = c
 
+	def execute(self, node):
+		if self.color!=node.token_in.color:
+			print "#%d: received token with: '%s', actual '%s'"%(node.id, self.color, node.token_out.color)
+			node.token_in = self
+			node.token_out.color = not node.token_out.color
+
 class TokenACK(object):
 	def __init__(self):
+		None
+
+	def execute(self, node):
 		None
 
 class Node(object):
@@ -30,10 +39,7 @@ class Node(object):
 		print "#%d: Init: in: %s, out: %s"%(self.id, self.token_in.color, self.token_out.color)
 
 	def e_receive(self, msg):
-		if msg.color!=self.token_in.color:
-			print "#%d: received token with: '%s', actual '%s'"%(self.id, msg.color, self.token_out.color)
-			self.token_in = msg
-			self.token_out.color = not self.token_out.color
+		msg.execute(self)
 
 	def e_send(self, msg):
 		self.next_timeout = time.time() + WAIT_TIME
