@@ -9,6 +9,16 @@ WAIT_TIME = 1.0 # in seconds
 
 __author__ = 'nickers'
 
+def ring_send(msg, destination):
+	"""
+		Pack & send message to ring.
+	"""
+	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+	data = pickle.dumps(msg)
+	s.sendto(data, destination)
+	s.close()
+
+
 class Token(object):
 	def __init__(self, c, owner, sender_id):
 		self.color = c
@@ -27,12 +37,9 @@ class Token(object):
 		return False
 
 	def __send_ack(self, next_node):
-		ack = TokenACK(self.color, self.owner, self.sender_id)
-		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		data = pickle.dumps(ack)
 		print "  +- sending ACK to %s"%(next_node,)
-		s.sendto(data, next_node)
-		s.close()
+		ack = TokenACK(self.color, self.owner, self.sender_id)
+		ring_send(ack, next_node)
 
 
 class TokenACK(Token):
@@ -52,7 +59,9 @@ class TokenACK(Token):
 			return True
 		else:
 			# todo i should send this to next hop
-			print "# I Should send this further"
+			## print "# I Should send this further:(c:%s,dst:%s)"%(self.color,self.sender_id)
+			print "@ack resending"
+			ring_send(self, node.next_node)
 		return True
 
 
@@ -75,11 +84,8 @@ class Node(object):
 	def e_send(self, msg):
 		self.next_timeout = time.time() + WAIT_TIME
 
-		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		data = pickle.dumps(msg)
 		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
-		s.sendto(data, self.next_node)
-		s.close()
+		ring_send(msg, self.next_node)
 
 
 	def e_timeout(self):
