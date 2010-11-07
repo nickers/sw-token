@@ -10,44 +10,57 @@ WAIT_TIME = 1.0 # in seconds
 __author__ = 'nickers'
 
 class Token(object):
-	def __init__(self, c, owner):
+	def __init__(self, c, owner, sender_id):
 		self.color = c
 		self.owner = owner
+		self.sender_id = sender_id
 
 	def execute(self, node):
 		if self.color!=node.token_in.color:
-			print "#%d: received token with: '%s', actual '%s'"%(node.id, self.color, node.token_out.color)
+			print " -- received token #%d, c:%s, out:%s"%(node.id, self.color, node.token_out.color)
 			node.token_in = self
 			node.token_out.color = not node.token_out.color
 			node.ack_received = False
 
-			self.__send_ack()
+			self.__send_ack(node.next_node)
 			return True
 		return False
 
-	def __send_ack(self):
-		ack = TokenACK()
+	def __send_ack(self, next_node):
+		ack = TokenACK(self.color, self.owner, self.sender_id)
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		data = pickle.dumps(ack)
-		print " @ACK to %s"%(self.owner,)
-		s.sendto(data, self.owner)
+		print "  +- sending ACK to %s"%(next_node,)
+		s.sendto(data, next_node)
 		s.close()
 
 
-class TokenACK(object):
-	def __init__(self):
-		None
+class TokenACK(Token):
+	def __init__(self, c, owner, sender_id):
+		super(TokenACK,self).__init__(c,owner,0)
+		self.sender_id = sender_id
 
 	def execute(self, node):
-		print " @ACK received"
-		node.ack_received = True
-		return False
+		if node.id==self.sender_id:
+			if self.color==node.token_out.color:
+				print " -- received ACK : %s"%self.color
+				# TODO fix it to check color
+				node.ack_received = True
+				return False
+			else:
+				print "! ACK with invalid color!"
+			return True
+		else:
+			# todo i should send this to next hop
+			print "# I Should send this further"
+		return True
+
 
 class Node(object):
 	def __init__(self, id, c, owner, next):
 		self.id = id
-		self.token_in = Token(False, owner)
-		self.token_out = Token(c, owner)
+		self.token_in = Token(False, owner, self.id)
+		self.token_out = Token(c, owner, self.id)
 		self.receive_time = None
 		self.next_timeout = time.time() + WAIT_TIME
 		self.next_node = next
@@ -64,7 +77,7 @@ class Node(object):
 
 		s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 		data = pickle.dumps(msg)
-		print "#%d: sending %s to %s"%(self.id, msg.color, self.next_node)
+		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
 		s.sendto(data, self.next_node)
 		s.close()
 
@@ -73,6 +86,8 @@ class Node(object):
 		if not self.ack_received:
 			self.e_send(self.token_out)
 		self.next_timeout = time.time() + WAIT_TIME
+
+
 
 
 def main(id, port, next):
@@ -96,7 +111,7 @@ def main(id, port, next):
 			if node.e_receive(data):
 				node.e_send(node.token_out)
 		except socket.timeout:
-			print "#%d: Timeout! ACK:%s"%(id, node.ack_received)
+			print " -- timeout: #%d: ack_state:%s"%(id, node.ack_received)
 			node.e_timeout()
 
 if __name__=="__main__":
