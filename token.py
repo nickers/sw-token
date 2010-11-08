@@ -4,21 +4,46 @@ import pickle, sys, socket, time, random
 PORT = 12351	# why not? :D
 HOST = ''		# '' means "wait on all interfaces"
 BUF_SIZE = 4096 # socket receive buffer in bytes
-WAIT_TIME = 1.0 # in seconds
+WAIT_TIME = 0.1 # in seconds
 
 
 __author__ = 'nickers'
+
+""" socket TO ring """
+ring_socket = None
+
+
+def ring_connect(addr):
+	print "try to: ", addr
+	again = True
+	ring_socket = None
+	while again:
+		try:
+			again = False
+			ring_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			ring_socket.connect(addr)
+		except:
+			again = True
+
+	globals()["ring_socket"] = ring_socket
+	return ring_socket
 
 def ring_send(msg, destination):
 	"""
 		Pack & send message to ring.
 	"""
 	if random.randint(1,100)>20:
-		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-		sock.setblocking(0)
+	#if True:
+#		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+#		sock.setblocking(1)
 		data = pickle.dumps(msg)
-		sock.sendto(data, destination)
-		sock.close()
+		l = len(data)
+		sent = 0;
+		while l!=sent:
+			sent += ring_socket.send(data[sent:])
+
+#		sock.sendto(data, destination)
+#		sock.close()
 	else:
 		print "!"
 
@@ -31,7 +56,7 @@ class Token(object):
 
 	def execute(self, node):
 		if self.color!=node.token_in.color:
-			print " -- received token #%d, c:%s, out:%s"%(node.id, self.color, node.token_out.color)
+			#print " -- received token #%d, c:%s, out:%s"%(node.id, self.color, node.token_out.color)
 			node.token_in = self
 			node.token_out.color = not node.token_out.color
 			node.ack_received = False
@@ -56,16 +81,15 @@ class TokenACK(Token):
 			if self.color==node.token_out.color:
 				print " -- received ACK : %s"%self.color
 				node.ack_received = True
-				return False
 			else:
 				print "! ACK with invalid color!"
-			return True
 		else:
 			# todo i should send this to next hop
 			## print "# I Should send this further:(c:%s,dst:%s)"%(self.color,self.sender_id)
 #			print "@ack resending"
+			print "passing ack:", self.sender_id
 			ring_send(self, node.next_node)
-		return True
+		return False
 
 
 class Node(object):
@@ -87,7 +111,7 @@ class Node(object):
 	def e_send(self, msg):
 		self.next_timeout = time.time() + WAIT_TIME
 
-#		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
+		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
 		ring_send(msg, self.next_node)
 
 
@@ -103,11 +127,19 @@ def main(id, port, next):
 	node = Node(id, id==0, (HOST, port), next)
 	node.e_init()
 
-	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	s.bind((HOST, port))
-	s.setblocking(1)
+	if id==0:
+		ring_connect(next)
 
+	sck = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+	sck.bind((HOST, port))
+	sck.listen(1)
+	sck.setblocking(1)
+	s,addr = sck.accept()
 	print "#%d: New client at %s" %(id,(HOST, port))
+	print "     Connection from: ", addr
+
+	if id!=0:
+		ring_connect(next)
 
 	while True:
 		try:
@@ -119,10 +151,10 @@ def main(id, port, next):
 			data = s.recv(BUF_SIZE)
 			data = pickle.loads(data)
 			if node.e_receive(data):
-				print " $token step"
+				#print " $token step"
 				node.e_send(node.token_out)
 		except:
-			print " -- timeout: #%d: ack_state:%s"%(id, node.ack_received)
+			#print " -- timeout: #%d: ack_state:%s"%(id, node.ack_received)
 			node.e_timeout()
 #		except socket.error:
 #			None #print " ~~ socket error, skipping..."
