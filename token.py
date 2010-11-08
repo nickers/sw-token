@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import pickle, sys, socket, time
+import pickle, sys, socket, time, random
 
 PORT = 12351	# why not? :D
 HOST = ''		# '' means "wait on all interfaces"
@@ -13,10 +13,14 @@ def ring_send(msg, destination):
 	"""
 		Pack & send message to ring.
 	"""
-	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-	data = pickle.dumps(msg)
-	s.sendto(data, destination)
-	s.close()
+	if random.randint(1,100)>20:
+		sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+		sock.setblocking(0)
+		data = pickle.dumps(msg)
+		sock.sendto(data, destination)
+		sock.close()
+	else:
+		print "!"
 
 
 class Token(object):
@@ -51,7 +55,6 @@ class TokenACK(Token):
 		if node.id==self.sender_id:
 			if self.color==node.token_out.color:
 				print " -- received ACK : %s"%self.color
-				# TODO fix it to check color
 				node.ack_received = True
 				return False
 			else:
@@ -60,7 +63,7 @@ class TokenACK(Token):
 		else:
 			# todo i should send this to next hop
 			## print "# I Should send this further:(c:%s,dst:%s)"%(self.color,self.sender_id)
-			print "@ack resending"
+#			print "@ack resending"
 			ring_send(self, node.next_node)
 		return True
 
@@ -84,7 +87,7 @@ class Node(object):
 	def e_send(self, msg):
 		self.next_timeout = time.time() + WAIT_TIME
 
-		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
+#		print " -- sending token src:#%d, c:%s, dest:%s"%(self.id, msg.color, self.next_node)
 		ring_send(msg, self.next_node)
 
 
@@ -102,6 +105,7 @@ def main(id, port, next):
 
 	s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 	s.bind((HOST, port))
+	s.setblocking(1)
 
 	print "#%d: New client at %s" %(id,(HOST, port))
 
@@ -115,10 +119,13 @@ def main(id, port, next):
 			data = s.recv(BUF_SIZE)
 			data = pickle.loads(data)
 			if node.e_receive(data):
+				print " $token step"
 				node.e_send(node.token_out)
-		except socket.timeout:
+		except:
 			print " -- timeout: #%d: ack_state:%s"%(id, node.ack_received)
 			node.e_timeout()
+#		except socket.error:
+#			None #print " ~~ socket error, skipping..."
 
 if __name__=="__main__":
 	if len(sys.argv)!=5:
