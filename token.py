@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 import pickle, sys, socket, time, random
 
-PORT = 12351	# why not? :D
-HOST = ''		# '' means "wait on all interfaces"
 BUF_SIZE = 4096 # socket receive buffer in bytes
 WAIT_TIME = 0.1 # in seconds
 
